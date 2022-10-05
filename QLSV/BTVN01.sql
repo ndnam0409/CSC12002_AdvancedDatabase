@@ -48,7 +48,8 @@ BEGIN
 	IF NOT EXISTS (SELECT * FROM Khoa WHERE @maKhoa = ma)
 		RETURN 0
 	-- Kiểm tra sinh viên có thuộc khoa này không 
-	
+	/**Code Here**/
+
 	RETURN 1
 END
 GO
@@ -68,7 +69,30 @@ GO
 
 -- BÀI TẬP STORED PROCEDURE
 -- 6.1 In danh sách các sinh viên của một lớp học
+GO 
+CREATE PROCEDURE USP_InDanhSachSV
+	@maLop varchar(10)
+AS
+BEGIN 
+	SELECT SV.*
+	FROM SinhVien SV
+	WHERE @maLop = SV.maLop
+END
+GO 
+EXEC USP_InDanhSachSV 'TH2002/02'
 -- 6.2 Nhập vào 2 sinh viên, 1 môn học. Tìm xem sinh viên nào có điểm thi môn học lần đầu tiên là cao hơn
+GO
+ALTER PROCEDURE USP_TimSVDiemCaoHon
+	@maSV1 varchar(10), @maSV2 varchar(10), @maMH varchar(10)
+AS
+BEGIN
+	IF(SELECT diem FROM KetQua WHERE @maSV1 = maSinhVien AND @maMH = maMonHoc AND lanThi = 1) < (SELECT diem FROM KetQua WHERE @maSV2 = maSinhVien AND @maMH = maMonHoc AND lanThi = 1)
+		PRINT N'Sinh viên có mã ' + @maSV1 + N' có điểm thi môn '+ @maMH  + N' cao hơn'
+	ELSE 
+		PRINT N'Sinh viên có mã ' + @maSV1 + N' có điểm thi môn '+ @maMH  + N' cao hơn'
+END
+GO
+EXEC USP_TimSVDiemCaoHon '0212001', '0212003', 'THT02'
 -- 6.3 Nhập vào 1 môn học và 1 mã sinh viên. Kiểm tra sinh viên có đậu môn này trong lần đầu tiên không. Nếu đậu thì xuất ra "Đậu", nếu không thì xuất ra "Không đậu"
 -- 6.4 Nhập vào một khoa, in danh sách các sinh viên(mã sinh viên, họ tên, ngày sinh) thuộc khoa này
 -- 6.5 Nhập vào một sinh viên và một môn học, in điểm thi của sinh viên này của các lần thi
