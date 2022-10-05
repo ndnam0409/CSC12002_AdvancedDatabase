@@ -349,3 +349,5 @@ insert into GiangKhoa
 values('CQ', 'CNTT', 'THT02', 2003, 2, 45, 0, 4)
 insert into GiangKhoa
 values('CQ', 'CNTT', 'THCS01', 2004, 1, 45, 30, 4)
+insert into GiangKhoa
+values('CQ', 'CNTT', 'TH101', 2004, 1, 45, 30, 5)
