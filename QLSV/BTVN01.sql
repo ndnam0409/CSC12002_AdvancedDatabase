@@ -70,7 +70,7 @@ GO
 -- BÀI TẬP STORED PROCEDURE
 -- 6.1 In danh sách các sinh viên của một lớp học
 GO 
-CREATE PROCEDURE USP_InDanhSachSV
+ALTER PROCEDURE USP_InDanhSachSV
 	@maLop varchar(10)
 AS
 BEGIN 
@@ -93,9 +93,81 @@ BEGIN
 END
 GO
 EXEC USP_TimSVDiemCaoHon '0212001', '0212003', 'THT02'
--- 6.3 Nhập vào 1 môn học và 1 mã sinh viên. Kiểm tra sinh viên có đậu môn này trong lần đầu tiên không. Nếu đậu thì xuất ra "Đậu", nếu không thì xuất ra "Không đậu"
+-- 6.3 Nhập vào 1 môn học và 1 mã sinh viên. Kiểm tra sinh viên có đậu môn này trong lần đầu tiên không. 
+--Nếu đậu thì xuất ra "Đậu", nếu không thì xuất ra "Không đậu"
+GO 
+CREATE PROCEDURE USP_KiemTraSVThiDau 
+	@maSV varchar(10), @maMH varchar(10)
+AS
+BEGIN 
+	IF EXISTS (SELECT * FROM KetQua WHERE @maSV = maSinhVien AND @maMH = maMonHoc AND diem >= 5 AND lanThi = 1)
+		PRINT N'Đậu'
+	ELSE
+		PRINT N'Không đậu'
+END
+GO
+EXEC USP_KiemTraSVThiDau '0212003', 'THT02'
 -- 6.4 Nhập vào một khoa, in danh sách các sinh viên(mã sinh viên, họ tên, ngày sinh) thuộc khoa này
+GO
+CREATE PROCEDURE USP_InDanhSachSinhVien 
+	@maKhoa varchar(10)
+AS
+BEGIN 
+	IF NOT EXISTS (SELECT * FROM Khoa WHERE @maKhoa = ma)
+		PRINT N'Mã khoa không tồn tại'
+	ELSE
+		SELECT SV.ma, SV.hoTen, SV.namSinh 
+		FROM SinhVien SV, Lop L
+		WHERE L.maKhoa = @maKhoa AND L.ma = SV.maLop
+END
+GO
+EXEC USP_InDanhSachSinhVien 'CNTT'
 -- 6.5 Nhập vào một sinh viên và một môn học, in điểm thi của sinh viên này của các lần thi
--- 6.6 Nhập vào một sinh viên, in ra các môn học mà sinh viên này phải học
+GO
+CREATE PROCEDURE USP_InDiemThi
+	@maSV varchar(10), @maMH varchar(10)
+AS
+	SELECT KQ.lanThi, KQ.diem
+	FROM KetQua KQ
+	WHERE KQ.maSinhVien = @maSV AND KQ.maMonHoc = @maMH
+GO
+EXEC USP_InDiemThi '0212001', 'THT01'
+-- 6.6 Nhập vào một sinh viên, in ra các môn học mà sinh viên này phải học (Không in được ds môn học khoa Vật Lý)
+GO
+CREATE PROCEDURE USP_InRaMonHoc
+	@maSV varchar(10)
+AS
+BEGIN 
+	SELECT MH.ma, MH.tenMonHoc
+	FROM MonHoc MH, Lop L, SinhVien SV
+	WHERE MH.maKhoa = L.maKhoa AND L.ma = SV.maLop and @maSV = SV.ma
+END
+GO
+EXEC USP_InRaMonHoc '0311002'
 -- 6.7 Nhập vào một môn học, in danh sách các sinh viên đậu môn này trong lần thi đầu tiên
+GO
+CREATE PROCEDURE USP_InDanhSachSinhVienDauMonHoc
+	@maMH varchar(10)
+AS
+BEGIN 
+	SELECT KQ.maSinhVien, SV.hoTen, SV.namSinh
+	FROM KetQua KQ, SinhVien SV
+	WHERE KQ.maMonHoc = @maMH AND SV.ma = KQ.maSinhVien AND KQ.lanThi = 1 AND KQ.diem >= 5
+END
+GO
+EXEC USP_InDanhSachSinhVienDauMonHoc 'THT01'
 -- 6.8 In điểm các môn học của sinh viên có mã số là maSinhVien được nhập vào (điểm môn học là điểm của lần thi sau cùng)
+GO
+CREATE PROCEDURE USP_InDiem
+	@maSV varchar(10)
+AS
+BEGIN
+	-- 6.8.1 Chỉ in ra các môn đã có điểm
+	SELECT KQ.maMonHoc, KQ.diem
+	FROM KetQua KQ
+	WHERE @maSV = KQ.maSinhVien AND KQ.diem >= 5
+	-- 6.8.2 Các môn chưa có điểm thì ghi điểm là NULL
+	-- 6.8.3 Các môn chưa có điểm thì ghi điểm là <chưa có điểm>
+END
+GO
+EXEC USP_InDiem '0212002'
