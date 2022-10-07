@@ -171,3 +171,97 @@ BEGIN
 END
 GO
 EXEC USP_InDiem '0212002'
+
+
+-- BÀI TẬP TRIGGER
+-- 7.1 Mã chương trình chỉ có thể là 'CQ' hoặc 'CD' hoặc 'TC'
+GO
+CREATE TRIGGER TG_KiemTraMaChuongTrinh 
+ON ChuongTrinh
+FOR INSERT, UPDATE
+AS
+	SELECT * FROM inserted
+	SELECT * FROM deleted
+	-- Điều kiện vi phạm 
+	IF EXISTS (SELECT * FROM ChuongTrinh CT JOIN inserted I ON I.ma = CT.ma AND I.ma <> 'CQ' AND I.ma <> 'CD' AND I.ma <> 'TC')
+		BEGIN 
+			RAISERROR('ER1: LOI THEM CHUONG TRINH', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+
+--7.2 Một học kì chỉ có hai học kì là 'HK1' và 'HK2'
+GO
+CREATE TRIGGER TG_KiemTraHK
+ON GiangKhoa
+FOR INSERT
+AS
+	SELECT * FROM inserted
+	SELECT * FROM deleted
+	-- Điều kiện vi phạm
+	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
+	AND GK.maMonHoc = I.maMonHoc AND I.hocKy <> 1 AND I.hocKy <> 2)
+		BEGIN
+			RAISERROR('ER1: LOI SO HOC KY', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+
+-- 7.3 Số tiết lý thuyết tối đa là 120
+GO
+CREATE TRIGGER TG_KiemTraSoTietLyThuyet
+ON GiangKhoa
+FOR INSERT
+AS	
+	SELECT * FROM inserted
+	SELECT * FROM deleted
+	-- Điều kiện vi phạm 
+	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
+	AND GK.maMonHoc = I.maMonHoc AND I.soTietLyThuyet > 120)
+		BEGIN
+			RAISERROR('ER1: LOI SO TIET LY THUYET', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+
+-- 7.4 Số tiết thực hành tối đa là 120
+GO
+CREATE TRIGGER TG_KiemTraSoTietThựcHành
+ON GiangKhoa
+FOR INSERT
+AS	
+	SELECT * FROM inserted
+	SELECT * FROM deleted
+	-- Điều kiện vi phạm 
+	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
+	AND GK.maMonHoc = I.maMonHoc AND I.soTietThucHanh > 120)
+		BEGIN
+			RAISERROR('ER1: LOI SO TIET THUC HANH', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+
+-- 7.5 Số tín chỉ tối đa của một môn học là 6
+GO
+CREATE TRIGGER TG_KiemTraSoTinChi
+ON GiangKhoa
+FOR INSERT
+AS	
+	SELECT * FROM inserted
+	SELECT * FROM deleted
+	-- Điều kiện vi phạm 
+	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
+	AND GK.maMonHoc = I.maMonHoc AND I.soTinChi > 6)
+		BEGIN
+			RAISERROR('ER1: LOI SO TIN CHI', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+
+-- 7.6 Điểm thi được chấm theo thang điểm 10 và chính xác đến 0.5 
+--(kiểm tra và báo lỗi nếu không đúng quy định; tự động làm tròn về độ chính xác nếu không đúng quy định)
+
+
+
+
+
