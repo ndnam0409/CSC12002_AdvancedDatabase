@@ -17,10 +17,12 @@ WHERE L.maKhoa = 'CNTT' AND KH.namBatDau = '2002' AND KH.namKetThuc = '2006'
 AND SV.maLop = L.ma AND KH.ma = L.maKhoaHoc AND SV.ma = KQ.maSinhVien 
 AND SV.ma NOT IN (SELECT KQ1.maSinhVien FROM KetQua KQ1 WHERE KQ1.maMonHoc = N'THCS01') 
 -- 4.4 Cho biết sinh viên thi không đậu môn Cấu trúc dữ liệu 1 nhưng chưa thi lại
-SELECT SV.*
-FROM SinhVien SV, KetQua KQ
-WHERE SV.ma = KQ.maSinhVien
-AND KQ.maMonHoc = N'THCS01' AND KQ.diem < 5 AND KQ.lanThi < 2
+SELECT SV.ma, SV.hoTen, SV.namSinh, COUNT(*) AS soLanThi 
+FROM SinhVien SV, KetQua KQ, MonHoc MH
+WHERE SV.ma = KQ.maSinhVien AND MH.ma = KQ.maMonHoc
+AND MH.tenMonHoc LIKE N'Cấu trúc dữ liệu 1' AND KQ.diem < 5
+GROUP BY SV.ma, SV.hoTen, SV.namSinh
+HAVING COUNT(*) = 1
 -- 4.5 Với mỗi lớp thuộc khoa CNTT, cho biết mã lớp, mã khóa học, tên chương trình và số sinh viên thuộc lớp đó. 
 SELECT L.ma, L.maKhoaHoc, CT.tenChuongTrinh, count(sv.maLop) AS SoLuongSinhVien
 FROM Lop L, ChuongTrinh CT, SinhVien SV
@@ -28,43 +30,67 @@ WHERE L.maChuongTrinh = CT.ma AND SV.maLop = L.ma
 AND L.maKhoa = 'CNTT'
 GROUP BY L.ma, L.maKhoaHoc, CT.tenChuongTrinh
 -- 4.6 Cho biết điểm trung bình của sinh viên có mã số 0212003 (điểm trung bình chỉ tính trên lần thi sau cùng của sinh viên)
-SELECT AVG(KQ.diem) AS DiemTrungBinh
-FROM KETQUA KQ
+SELECT AVG(KQ.diem) AS DiemTB
+FROM KetQua KQ
 WHERE KQ.maSinhVien = '0212003'
-
+AND KQ.lanThi = (SELECT MAX(KQ1.lanThi) FROM KetQua KQ1 WHERE KQ1.maMonHoc = KQ.maMonHoc AND KQ1.maSinhVien = KQ.maSinhVien)
 -- BÀI TẬP FUNCTION	
 -- 5.1 Với 1 mã sinh viên và 1 mã khoa, kiểm tra xem sinh viên có thuộc khoa này hay không (trả về đúng hoặc sai)
 GO
-ALTER FUNCTION F_KiemTra (@maSV varchar(10), @maKhoa varchar(10))
+CREATE FUNCTION F_KiemTraSV (@maSV varchar(10), @maKhoa varchar(10))
 RETURNS BIT
 AS
 BEGIN 
-	DECLARE @hopLe int
-	SET @hopLe = 1
-	-- Kiểm tra xem mã sinh viên có tồn tại hay không
-	IF NOT EXISTS (SELECT * FROM SinhVien WHERE @maSV = ma)
-		RETURN 0
-	-- Kiểm tra xem mã khoa có tồn tại hay không
-	IF NOT EXISTS (SELECT * FROM Khoa WHERE @maKhoa = ma)
-		RETURN 0
-	-- Kiểm tra sinh viên có thuộc khoa này không 
-	/**Code Here**/
-
-	RETURN 1
+	IF EXISTS (SELECT * FROM SinhVien SV, Khoa K, Lop L WHERE SV.ma = @maSV and K.ma = @maKhoa AND L.ma = SV.maLop AND L.maKhoa = K.ma)
+		RETURN 1  -- True
+	RETURN 0      -- False
 END
 GO
-
+SELECT dbo.F_KiemTraSV('0212001', 'CNTT') -- True
+SELECT dbo.F_KiemTraSV('0212002', 'VL')   -- False
 -- 5.2 Tính điểm thi sau cùng của một sinh viên trong một môn học cụ thể
 GO
-CREATE FUNCTION F_TinhDiemTB (@maSV varchar(10), @maMH varchar(10))
+-- ALTER
+CREATE FUNCTION F_TinhDiemThi (@maSV varchar(10), @maMH varchar(10))
 RETURNS FLOAT
 AS
 BEGIN
-	RETURN 1
+	DECLARE @diem float
+	SET @diem = 0
+
+	SELECT @diem = KQ.diem FROM KetQua KQ 
+	WHERE @maSV = KQ.maSinhVien AND @maMH = KQ.maMonHoc
+	ORDER BY KQ.lanThi DESC
+
+	RETURN @diem
 END
 GO
+SELECT dbo.F_TinhDiemThi('0212001', 'THCS01')
 -- 5.3 Tính điểm trung bình của sinh viên (điểm trung bình dựa vào lần thi sau cùng), sử dụng function đã viết ở 5.2
+GO
+ALTER FUNCTION F_TinhDiemTB (@maSV varchar(10))
+RETURNS FLOAT
+AS
+BEGIN
+	DECLARE @diemTB FLOAT
+	SET @diemTB = 0
+	SELECT @diemTB = avg(dbo.F_TinhDiemThi(@maSV, KQ.maMonHoc)) 
+	FROM KetQua KQ
+	WHERE KQ.maSinhVien = @maSV
+
+	RETURN @diemTB
+END 
+GO
+SELECT dbo.F_TinhDiemTB('0212001')
 -- 5.4 Nhập vào một sinh viên và một môn học, trả về điểm thi của sinh viên này trong các lần thi của môn học đó
+GO
+CREATE FUNCTION F_InRaDiemTheoLanThi (@maSV varchar(10), @maMH varchar(10))
+RETURNS TABLE
+AS
+	RETURN SELECT KQ.lanThi, KQ.diem FROM KetQua KQ
+		   WHERE @maSV = KQ.maSinhVien and @maMH = KQ.maMonHoc
+GO
+SELECT * FROM dbo.F_InRaDiemTheoLanThi('0212001', 'THT01')
 -- 5.5 Nhập vào một sinh viên, trả về danh sách các môn học mà sinh viên này phải học 
 
 -- BÀI TẬP STORED PROCEDURE
