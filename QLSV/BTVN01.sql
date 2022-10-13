@@ -92,7 +92,21 @@ AS
 GO
 SELECT * FROM dbo.F_InRaDiemTheoLanThi('0212001', 'THT01')
 -- 5.5 Nhập vào một sinh viên, trả về danh sách các môn học mà sinh viên này phải học 
-
+GO
+CREATE FUNCTION F_InDanhSachMonHoc (@maSV varchar(10))
+RETURNS TABLE
+AS
+	RETURN 
+		SELECT MH.tenMonHoc 
+		FROM MonHoc MH
+		LEFT JOIN Khoa K ON MH.maKhoa = K.ma
+		LEFT JOIN Lop L ON L.maKhoa = K.ma
+		LEFT JOIN ChuongTrinh CT ON CT.ma = L.maChuongTrinh
+		LEFT JOIN KhoaHoc KH ON KH.ma = L.maKhoaHoc
+		LEFT JOIN SinhVien SV ON SV.maLop = L.ma
+		WHERE @maSV = SV.ma
+GO
+SELECT * FROM dbo.F_InDanhSachMonHoc('0212001')
 -- BÀI TẬP STORED PROCEDURE
 -- 6.1 In danh sách các sinh viên của một lớp học
 GO 
@@ -207,7 +221,6 @@ ON ChuongTrinh
 FOR INSERT, UPDATE
 AS
 	SELECT * FROM inserted
-	SELECT * FROM deleted
 	-- Điều kiện vi phạm 
 	IF EXISTS (SELECT * FROM ChuongTrinh CT JOIN inserted I ON I.ma = CT.ma AND I.ma <> 'CQ' AND I.ma <> 'CD' AND I.ma <> 'TC')
 		BEGIN 
@@ -220,10 +233,9 @@ GO
 GO
 CREATE TRIGGER TG_KiemTraHK
 ON GiangKhoa
-FOR INSERT
+FOR UPDATE, INSERT
 AS
 	SELECT * FROM inserted
-	SELECT * FROM deleted
 	-- Điều kiện vi phạm
 	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
 	AND GK.maMonHoc = I.maMonHoc AND I.hocKy <> 1 AND I.hocKy <> 2)
@@ -237,10 +249,9 @@ GO
 GO
 CREATE TRIGGER TG_KiemTraSoTietLyThuyet
 ON GiangKhoa
-FOR INSERT
+FOR INSERT, UPDATE
 AS	
 	SELECT * FROM inserted
-	SELECT * FROM deleted
 	-- Điều kiện vi phạm 
 	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
 	AND GK.maMonHoc = I.maMonHoc AND I.soTietLyThuyet > 120)
@@ -254,10 +265,9 @@ GO
 GO
 CREATE TRIGGER TG_KiemTraSoTietThựcHành
 ON GiangKhoa
-FOR INSERT
+FOR UPDATE, INSERT
 AS	
 	SELECT * FROM inserted
-	SELECT * FROM deleted
 	-- Điều kiện vi phạm 
 	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
 	AND GK.maMonHoc = I.maMonHoc AND I.soTietThucHanh > 120)
@@ -271,10 +281,9 @@ GO
 GO
 CREATE TRIGGER TG_KiemTraSoTinChi
 ON GiangKhoa
-FOR INSERT
+FOR UPDATE, INSERT
 AS	
 	SELECT * FROM inserted
-	SELECT * FROM deleted
 	-- Điều kiện vi phạm 
 	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
 	AND GK.maMonHoc = I.maMonHoc AND I.soTinChi > 6)
@@ -287,7 +296,69 @@ GO
 -- 7.6 Điểm thi được chấm theo thang điểm 10 và chính xác đến 0.5 
 --(kiểm tra và báo lỗi nếu không đúng quy định; tự động làm tròn về độ chính xác nếu không đúng quy định)
 
+-- 7.7 Năm kết thúc khóa học phải lớn hơn hoặc bằng năm bắt đầu
+GO
+ALTER TRIGGER TG_KiemTraNamKetThuc
+ON KhoaHoc 
+FOR UPDATE, INSERT
+AS
+	SELECT * FROM inserted
+	SELECT * FROM deleted
+	-- Điều kiện vi phạm
+	IF EXISTS (SELECT * FROM KhoaHoc KH JOIN inserted I ON KH.ma = I.ma AND I.namKetThuc < I.namBatDau)
+		BEGIN
+			RAISERROR('ER1: LOI NAM KET THUC', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
 
+-- 7.8 Số tiết lý thuyết của mỗi giảng khóa không nhỏ hơn số tiết thực hành
+GO
+CREATE TRIGGER TG_KiemTraSoTiet
+ON GiangKhoa 
+FOR INSERT, UPDATE
+AS
+	SELECT * FROM inserted
+	-- Điều kiện vi phạm
+	IF EXISTS (SELECT * FROM GiangKhoa GK JOIN inserted I ON GK.maChuongTrinh = I.maChuongTrinh AND GK.maKhoa = I.maKhoa 
+	AND GK.maMonHoc = I.maMonHoc AND I.soTietLyThuyet < I.soTietThucHanh)
+		BEGIN
+			RAISERROR('ER: SO TIET LY THUYET PHAI LON HON SO TIET THUC HANH', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+-- 7.9 Tên chương trình phải phân biệt
+ALTER TABLE ChuongTrinh
+ADD CONSTRAINT U_TenCT unique(tenChuongTrinh)
+-- 7.10 Tên khoa phải phân biệt
+ALTER TABLE Khoa
+ADD CONSTRAINT U_TenKhoa unique(tenKhoa)
+-- 7.11 Tên môn học phải là duy nhất
+ALTER TABLE MonHoc 
+ADD CONSTRAINT U_TenMH unique(tenMonHoc)
+-- 7.12 Sinh viên chỉ được thi tối đa 2 lần cho một môn học
+ALTER TABLE KetQua
+ADD CONSTRAINT C_lanThi check(lanThi <= 2)
+-- 7.14 Năm bắt đầu khóa học của một lớp học không thể nhỏ hơn năm thành lập của khoa quản lý lớp đó
+GO
+CREATE TRIGGER TG_Cau14 
+ON KhoaHoc
+FOR INSERT, UPDATE
+AS
+	SELECT * FROM inserted 
+	-- Điều kiện vi phạm
+	IF EXISTS (SELECT * FROM inserted I
+				LEFT JOIN Lop L ON L.maKhoaHoc = I.ma
+				LEFT JOIN Khoa K ON K.ma = L.maKhoa
+				WHERE I.namBatDau < K.namThanhLap)
+		BEGIN
+			RAISERROR('ERROR: NAM BAT DAY CUA MOT LOP KHONG THE NHO HON NAM THANH LAP CUA MOT KHOA', 16, 1)
+			ROLLBACK TRAN
+		END
+GO
+-- 7.15 Sinh viên chỉ có thể dự thi các môn học có trong chương trình và thuộc về khoa mà sinh viên đó theo học
+
+-- 7.16 Bổ sung vào quan hệ LOP thuộc tính SISO và kiểm tra sĩ số của một lớp phải bằng số lượng sinh viên đang theo học lớp đó
 
 
 
