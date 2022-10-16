@@ -59,13 +59,14 @@ BEGIN
 	SET @diem = 0
 
 	SELECT @diem = KQ.diem FROM KetQua KQ 
-	WHERE @maSV = KQ.maSinhVien AND @maMH = KQ.maMonHoc
-	ORDER BY KQ.lanThi DESC
-
+	WHERE @maSV = KQ.maSinhVien AND @maMH = KQ.maMonHoc AND KQ.lanThi = (SELECT MAX(KQ1.lanThi) 
+																		 FROM KetQua KQ1 
+																		 WHERE KQ1.maSinhVien = KQ.maSinhVien AND KQ.maMonHoc = KQ1.maMonHoc)
+ 	
 	RETURN @diem
 END
 GO
-SELECT dbo.F_TinhDiemThi('0212001', 'THCS01')
+SELECT dbo.F_TinhDiemThi('0212003', 'THCS01')
 -- 5.3 Tính điểm trung bình của sinh viên (điểm trung bình dựa vào lần thi sau cùng), sử dụng function đã viết ở 5.2
 GO
 ALTER FUNCTION F_TinhDiemTB (@maSV varchar(10))
@@ -82,6 +83,7 @@ BEGIN
 END 
 GO
 SELECT dbo.F_TinhDiemTB('0212001')
+select * from KetQua where maSinhVien = '0212001'
 -- 5.4 Nhập vào một sinh viên và một môn học, trả về điểm thi của sinh viên này trong các lần thi của môn học đó
 GO
 CREATE FUNCTION F_InRaDiemTheoLanThi (@maSV varchar(10), @maMH varchar(10))
@@ -198,23 +200,124 @@ GO
 EXEC USP_InDanhSachSinhVienDauMonHoc 'THT01'
 -- 6.8 In điểm các môn học của sinh viên có mã số là maSinhVien được nhập vào (điểm môn học là điểm của lần thi sau cùng)
 GO
-CREATE PROCEDURE USP_InDiem
+ALTER PROCEDURE USP_InDiem
 	@maSV varchar(10)
 AS
 BEGIN
 	-- 6.8.1 Chỉ in ra các môn đã có điểm
-	SELECT KQ.maMonHoc, KQ.diem
+	SELECT KQ.diem
 	FROM KetQua KQ
-	WHERE @maSV = KQ.maSinhVien AND KQ.diem >= 5
+	WHERE KQ.maSinhVien = @maSV AND KQ.lanThi = (SELECT MAX(KQ1.lanThi) 
+												 FROM KetQua KQ1 
+												 WHERE KQ.maSinhVien = KQ1.maSinhVien AND KQ.maMonHoc = KQ1.maMonHoc)
 	-- 6.8.2 Các môn chưa có điểm thì ghi điểm là NULL
 	-- 6.8.3 Các môn chưa có điểm thì ghi điểm là <chưa có điểm>
 END
 GO
-EXEC USP_InDiem '0212002'
+EXEC USP_InDiem '0212001'
+
+-- 6.9 Thêm quan hệ xếp loại
+CREATE TABLE XepLoai(
+	maSinhVien varchar(10),
+	diemTB float,
+	ketQua nvarchar(10),
+	hocLuc nvarchar(10)
+	PRIMARY KEY(maSinhVien), 
+	FOREIGN KEY (maSinhVien) REFERENCES dbo.SinhVien(ma)  
+)
+-- Tạo function kết quả
+GO 
+CREATE FUNCTION F_KetQua (@maSV varchar(10))
+RETURNS NVARCHAR(10)
+AS
+BEGIN
+	DECLARE @ketQua nvarchar(10)
+	DECLARE @diemTB FLOAT
+	DECLARE @kiemTra FLOAT
+	SELECT @diemTB = dbo.F_TinhDiemTB(@maSV)
+	SELECT @kiemTra = count(dbo.F_TinhDiemThi(KQ.maSinhVien, KQ.maMonHoc)) FROM KetQua KQ WHERE KQ.maSinhVien = @maSV AND KQ.diem <= 4
+	-- Nếu điểm TB >= 5 và không quá 2 môn dưới 4 điểm thì Đạt
+	IF @diemTB >= 5 AND @kiemTra <= 2
+		SET @ketQua = N'Đạt'
+	ELSE
+		SET @ketQua = N'Không đạt'
+	RETURN @ketQua
+END
+GO
+SELECT dbo.F_KetQua('0212001')
+
+-- Tạo function xếp loại học lực
+GO
+ALTER FUNCTION F_HocLuc (@maSV varchar(10))
+RETURNS NVARCHAR(10)
+AS
+BEGIN
+	DECLARE @hocLuc nvarchar(10)
+	SET @hocLuc = N''
+	DECLARE @diemTB float
+	SELECT @diemTB = DBO.F_TinhDiemTB(@maSV)
+	DECLARE @ketQua nvarchar(10)
+	SELECT @ketQua = dbo.F_KetQua(@maSV)
+
+	IF (@ketQua = N'Đạt')
+		IF (@diemTB >= 8)
+			SET @hocLuc = N'Giỏi'
+		ELSE 
+			IF (@diemTB >= 7)
+				SET @hocLuc = N'Khá'
+			ELSE 
+				SET @hocLuc = N'Trung bình'
+	RETURN @hocLuc
+END
+GO
+
+SELECT dbo.F_HocLuc('0312001')
+
+-- Đưa dữ liệu vào bảng 
+INSERT INTO XepLoai(maSinhVien)
+SELECT ma FROM SinhVien
+
+UPDATE dbo.XepLoai 
+SET diemTB = dbo.F_TinhDiemTB(maSinhVien)
+
+UPDATE dbo.XepLoai
+SET ketQua = dbo.F_KetQua(maSinhVien)
+
+UPDATE dbo.XepLoai
+SET hocLuc = dbo.F_HocLuc(maSinhVien)
 
 
+--6.10 Với các sinh viên tham gia đầy đủ các môn học của khoa, chương trình mà sinh viên đang theo học, hãy in ra điểm trung bình cho các sinh viên này
+-- Lấy ra tất cả các môn học theo chương trình mà sinh viên đang theo học
+GO
+CREATE FUNCTION F_KiemTraMH_CT (@maSV varchar(10))
+RETURNS TABLE
+AS
+	RETURN  
+	SELECT DISTINCT GK.maMonHoc FROM GiangKhoa GK
+	LEFT JOIN Khoa K ON K.ma = GK.maKhoa
+	LEFT JOIN Lop L ON L.maKhoa = K.ma
+	LEFT JOIN SinhVien SV ON SV.maLop = L.ma
+	LEFT JOIN KhoaHoc KH ON KH.ma = L.maKhoaHoc
+	LEFT JOIN MonHoc MH ON GK.maMonHoc = MH.ma
+	LEFT JOIN ChuongTrinh CT ON GK.maChuongTrinh = CT.ma
+	WHERE SV.ma = @maSV
+	AND GK.namHoc <= KH.namKetThuc
+	AND GK.namHoc >= KH.namBatDau
+GO
+
+-- Lấy ra tất cả môn học mà sinh viên thi 
+
+-- In ra điểm trung bình của sinh viên thỏa mãn số môn học 
+
+
+-- Viết stored procedure kiểm tra học lực của sinh viên 
 -- BÀI TẬP TRIGGER
 -- 7.1 Mã chương trình chỉ có thể là 'CQ' hoặc 'CD' hoặc 'TC'
+-- Dùng check
+ALTER TABLE ChuongTrinh
+ADD CONSTRAINT check_MaCT check(ma in ('CQ', 'CD', 'TC'))
+-- Dùng Trigger
 GO
 CREATE TRIGGER TG_KiemTraMaChuongTrinh 
 ON ChuongTrinh
@@ -293,9 +396,43 @@ AS
 		END
 GO
 
--- 7.6 Điểm thi được chấm theo thang điểm 10 và chính xác đến 0.5 
---(kiểm tra và báo lỗi nếu không đúng quy định; tự động làm tròn về độ chính xác nếu không đúng quy định)
+-- 7.6 Điểm thi được chấm theo thang điểm 10 
+ALTER TABLE KetQua
+ADD CONSTRAINT check_Diem check(diem >=0 AND diem <=10)
+GO
+-- điểm thi được tính chính xác đến 0.5 
+-- Quy ước: dưới 0.25 làm tròn về 0.0
+-- từ 0.25 đến 0.75 làm tròn về 0.5
+-- trên 0.75 làm tròn về 1.0
+CREATE FUNCTION F_LamTronDiem(@diem float)
+RETURNS FLOAT
+AS
+BEGIN
+	DECLARE @diemLamTron float
+	SET @diemLamTron = FLOOR(@diem)   
+	IF (@diem - @diemLamTron < 0.25)
+		SET @diem = @diemLamTron
+	ELSE
+		IF (@diem - @diemLamTron >= 0.25 AND @diem - @diemLamTron > 0.75)
+			SET @diem = @diemLamTron + 0.5
+		ELSE 
+			SET @diem = @diemLamTron + 1
+	RETURN @diem
+END
 
+--
+GO
+CREATE TRIGGER TG_Diem
+ON KetQua
+FOR INSERT, UPDATE
+AS
+	BEGIN
+		SELECT * FROM inserted I
+		UPDATE dbo.KetQua
+		SET diem = dbo.F_LamTronDiem(I.diem)
+		FROM dbo.KetQua KQ JOIN inserted I ON I.diem = KQ.diem AND I.lanThi = KQ.lanThi AND I.maMonHoc = KQ.maMonHoc AND I.maSinhVien = KQ.maSinhVien	
+	END
+GO
 -- 7.7 Năm kết thúc khóa học phải lớn hơn hoặc bằng năm bắt đầu
 GO
 ALTER TRIGGER TG_KiemTraNamKetThuc
@@ -303,7 +440,6 @@ ON KhoaHoc
 FOR UPDATE, INSERT
 AS
 	SELECT * FROM inserted
-	SELECT * FROM deleted
 	-- Điều kiện vi phạm
 	IF EXISTS (SELECT * FROM KhoaHoc KH JOIN inserted I ON KH.ma = I.ma AND I.namKetThuc < I.namBatDau)
 		BEGIN
@@ -357,8 +493,64 @@ AS
 		END
 GO
 -- 7.15 Sinh viên chỉ có thể dự thi các môn học có trong chương trình và thuộc về khoa mà sinh viên đó theo học
-
+GO
+CREATE TRIGGER TG_Cau15 
+ON KetQua
+FOR INSERT, UPDATE
+AS 
+BEGIN
+	SELECT * FROM inserted 
+	-- Điều kiện vi phạm
+	IF EXISTS (SELECT * FROM KetQua KQ JOIN inserted I ON I.maSinhVien = KQ.maSinhVien AND I.maMonHoc = KQ.maMonHoc AND
+	I.maMonHoc NOT IN (SELECT * FROM dbo.F_KiemTraMH_CT(KQ.maSinhVien)))
+		BEGIN
+			RAISERROR('ERROR: SINH VIEN CHI CO THE DU THI CAC MON HOC CO TRONG CHUONG TRINH VÀ THUOC VE KHOA MA SINH VIEN HOC', 16, 1)
+			ROLLBACK TRAN
+		END
+END
+GO
 -- 7.16 Bổ sung vào quan hệ LOP thuộc tính SISO và kiểm tra sĩ số của một lớp phải bằng số lượng sinh viên đang theo học lớp đó
+-- Thêm sĩ số vào bảng Lop
+ALTER TABLE Lop ADD	SISO INT
+GO
+-- Trigger kiểm tra sự thay đổi sỉ số khi INSERT/UPDATE số lượng Sinh viên thay đổi
+CREATE TRIGGER TG_UpdateSiSO
+ON SinhVien
+FOR INSERT, UPDATE
+AS 
+BEGIN
+	 DECLARE @siso INT
+     DECLARE @maLop VARCHAR(10)
+     SELECT @maLop = I.ma FROM Inserted AS I
+     SELECT @siso = COUNT(*) FROM SinhVien AS SV
+     WHERE @maLop = SV.ma
+
+     UPDATE dbo.Lop
+	 SET SISO = @siso
+     WHERE Lop.ma = @maLop
+END
+GO
+---- Trigger kiểm tra sự thay đổi sỉ số khi DELETED số lượng Sinh viên thay đổi
+CREATE TRIGGER TG_DeleteSiSo
+ON SinhVien
+FOR DELETE
+AS
+    BEGIN
+        DECLARE @siso INT
+        DECLARE @maLop VARCHAR(10)
+
+        SELECT @maLop = D.maLop FROM Deleted AS D
+
+        SELECT @siso = COUNT(*) FROM SinhVien AS SV
+        WHERE @maLop = SV.maLop
+
+        UPDATE dbo.Lop
+        SET SISO = @siso
+        WHERE Lop.ma = @maLop
+    END 
+GO
+
+
 
 
 
